@@ -1,145 +1,93 @@
-body {
-  margin: 0;
-  overflow: hidden;
-  background-color: #000000;
-  font-family: "Segoe UI", sans-serif;
-}
-#canvas-container {
-  width: 100%;
-  height: 100vh;
-  display: block;
-}
+/* ========================================= */
+/* STYLE CHO BỨC THƯ (ĐÃ SỬA LỖI CUỘN DỌC) */
+/* ========================================= */
 
-#ui-layer {
-  position: absolute;
-  left: 50%;
-  width: 100%;
-  max-width: 100%;
-  text-align: center;
-  pointer-events: none;
-  z-index: 100;
-
-  /* CENTER DEFAULT */
-  top: 50%;
-  transform: translate(-50%, -50%);
-  transition: all 0.8s ease;
-}
-#ui-layer.bottom {
-  top: auto;
-  bottom: 30px;
-  transform: translateX(-50%);
-}
-.badge {
-  display: inline-block;
-  background: rgba(0, 0, 0, 0.7);
-  border: 2px solid #ffd700;
-  color: #ffd700;
-  padding: 10px 25px;
-  border-radius: 50px;
-  font-size: 18px;
-  font-weight: bold;
-  margin-bottom: 10px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  box-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
-  text-shadow: 0 0 10px #ffd700;
-}
-
-.guide {
-  color: #ccc;
-  font-size: 13px;
-  margin-bottom: 20px;
-  text-shadow: 0 2px 4px black;
-}
-
-button {
-  pointer-events: auto;
-  cursor: pointer;
-  background: linear-gradient(to bottom, #d32f2f, #8b0000);
-  color: #fff;
-  border: 2px solid #ffd700;
-  padding: 15px 50px;
-  border-radius: 30px;
-  font-weight: 800;
-  font-size: 16px;
-  box-shadow: 0 0 30px rgba(255, 0, 0, 0.6);
-  animation: pulse 1.5s infinite;
-}
-@keyframes pulse {
-  0% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.05);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
-
-#camera-preview {
-  position: absolute;
-  top: 15px;
-  right: 15px;
-  width: 120px;
-  height: 90px;
-  transform: scaleX(-1);
-  opacity: 0.6;
-  border-radius: 8px;
-}
-
-#error-log {
-  display: none;
-  position: absolute;
-  top: 0;
-  left: 0;
-  color: red;
-  background: rgba(0, 0, 0, 0.8);
-  z-index: 999;
-  padding: 10px;
-}
-
-/* Style cho bức thư */
-.letter-container {
+#secret-letter {
     position: fixed;
-    top: 0; left: 0; width: 100%; height: 100%;
-    background: rgba(0, 0, 0, 0.85); /* Nền tối làm nổi thư */
+    top: 0; left: 0; 
+    width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.85); /* Nền tối mờ */
     z-index: 2000;
-    display: flex;
+    
+    /* Căn giữa */
+    display: none; /* Mặc định ẩn, JS sẽ bật lên */
     justify-content: center;
     align-items: center;
-    animation: fadeIn 0.5s ease;
+    
+    /* Quan trọng: Padding để hộp thư không dính sát mép màn hình */
+    padding: 20px; 
+    box-sizing: border-box;
 }
 
-.letter-content {
+/* Hộp nội dung thư */
+#secret-letter .letter-content {
+    /* --- Giữ lại style trang trí cũ của bạn --- */
     background: #fff;
-    width: 300px;
-    padding: 30px;
-    border-radius: 10px;
-    text-align: center;
-    box-shadow: 0 0 50px rgba(255, 215, 0, 0.5);
     border: 5px solid #d4af37;
     background-image: repeating-linear-gradient(45deg, #fff 0px, #fff 10px, #f0f0f0 10px, #f0f0f0 20px);
-    transform: scale(0.8);
+    box-shadow: 0 0 50px rgba(255, 215, 0, 0.5);
+    border-radius: 10px;
+    text-align: center;
+    
+    /* --- SỬA LỖI HIỂN THỊ TRÊN ĐIỆN THOẠI --- */
+    width: 100%;
+    max-width: 400px;       /* Rộng tối đa 400px cho đẹp */
+    max-height: 80vh;       /* Chiều cao tối đa 80% màn hình */
+    overflow-y: auto;       /* Tự động hiện thanh cuộn nếu dài */
+    -webkit-overflow-scrolling: touch; /* Cuộn mượt trên iPhone */
+    
+    padding: 25px;          /* Căn lề trong */
+    pointer-events: auto;   /* Đảm bảo bấm được nút */
     animation: popUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
 }
 
-.letter-content h1 {
+#secret-letter .letter-content h1 {
     font-family: 'Mountains of Christmas', cursive;
     color: #c0392b;
     margin-top: 0;
+    font-size: 28px; /* Chữ to rõ hơn chút */
 }
-.letter-content p {
-    font-size: 18px;
+
+#secret-letter .letter-content p {
+    font-size: 16px; /* Chữ vừa phải để dễ đọc trên đt */
     color: #333;
-    line-height: 1.5;
+    line-height: 1.6;
+    margin-bottom: 20px;
+    text-align: justify; /* Căn đều 2 bên cho đẹp */
 }
+
 .signature {
     margin-top: 20px;
     font-weight: bold;
     color: #d4af37;
     font-size: 20px;
+    display: block; /* Xuống dòng */
 }
 
-@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-@keyframes popUp { to { transform: scale(1); } }
+/* Nút đóng thư riêng biệt */
+#btn-close-letter {
+    margin-top: 15px;
+    background: #d42426;
+    color: white;
+    border: none;
+    padding: 12px 30px;
+    font-size: 16px;
+    border-radius: 50px;
+    cursor: pointer;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    animation: none; /* Tắt hiệu ứng pulse để đỡ rối mắt khi đọc */
+}
+
+/* Thanh cuộn đẹp (Optional) */
+#secret-letter .letter-content::-webkit-scrollbar {
+    width: 6px;
+}
+#secret-letter .letter-content::-webkit-scrollbar-thumb {
+    background: #d4af37;
+    border-radius: 3px;
+}
+
+@keyframes popUp { 
+    from { transform: scale(0.5); opacity: 0; }
+    to { transform: scale(1); opacity: 1; } 
+}
