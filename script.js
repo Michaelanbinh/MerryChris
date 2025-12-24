@@ -1,5 +1,5 @@
 // ======================================================
-// 1. CẤU HÌNH & BIẾN TOÀN CỤC
+// 1. CẤU HÌNH & BIẾN HỆ THỐNG
 // ======================================================
 const ui = document.getElementById("ui-layer");
 if (ui) ui.classList.add("bottom");
@@ -10,28 +10,26 @@ const CONFIG = {
   treeHeight: 65, treeBaseRadius: 40,
 };
 
-// Biến hệ thống
 let scene, camera, renderer;
 let groupGold, groupRed, groupGift, snow, snowSpeeds, snowCount;
 let photoMeshes = [];
 let titleMesh, starMesh;
 
-// --- TRẠNG THÁI (State) ---
+// Trạng thái logic
 let state = "TREE";
 let selectedIndex = 0;
 let handX = 0.5;
 
-// --- LOGIC ĐỌC THƯ (QUAN TRỌNG) ---
-// Đưa biến này ra ngoài cùng để không bị lỗi phạm vi (scope)
-window.isReadingLetter = false; 
-let lastCloseTime = 0; 
+// Biến kiểm soát đọc thư (Global)
+window.isReadingLetter = false;
+window.lastCloseTime = 0; 
 
 // Âm thanh
 const MUSIC_URL = "./res/audio.mp3";
 let bgMusic = new Audio(MUSIC_URL);
 bgMusic.loop = true; bgMusic.volume = 1.0;
 
-// Texture Loader
+// Texture
 const loader = new THREE.TextureLoader();
 const photoFiles = [
   "./res/1.jpg", "./res/2.jpg", "./res/3.jpg",
@@ -52,7 +50,7 @@ const photoTextures = [];
 photoFiles.forEach((f, i) => (photoTextures[i] = loader.load(f)));
 
 // ======================================================
-// 2. CÁC HÀM XỬ LÝ TEXTURE
+// 2. TEXTURE & MATERIAL
 // ======================================================
 function createEmojiTexture(emoji, color) {
   const canvas = document.createElement("canvas");
@@ -113,54 +111,103 @@ function createPhotoMaterial(texture) {
 }
 
 // ======================================================
-// 3. LOGIC MỞ VÀ ĐÓNG THƯ (GLOBAL)
+// 3. LOGIC ĐÓNG / MỞ THƯ
 // ======================================================
-
-// Hàm Mở Thư
 function openLetter() {
-  if (window.isReadingLetter) return; // Đang đọc rồi thì thôi
-  
-  // Kiểm tra Cooldown: Nếu mới đóng chưa được 1.5 giây thì không mở lại
-  if (Date.now() - lastCloseTime < 1500) return;
+  if (window.isReadingLetter) return;
+  if (Date.now() - window.lastCloseTime < 2000) return;
 
-  console.log("--> ACTION: Mở thư");
+  console.log("OPENING LETTER...");
   window.isReadingLetter = true;
   
   const letterDiv = document.getElementById("secret-letter");
+  if (letterDiv) letterDiv.style.display = "flex";
+  
   const statusDiv = document.getElementById("status");
-  
-  if (letterDiv) {
-    letterDiv.style.display = "flex";
-  }
-  
   if (statusDiv) {
     statusDiv.innerText = "⭐ ĐANG ĐỌC THƯ ⭐";
     statusDiv.style.color = "#FF00FF";
   }
 }
 
-// Hàm Đóng Thư (Gắn vào window để gọi từ HTML được dễ dàng)
-window.closeLetterLogic = function() {
-  console.log("--> ACTION: Đóng thư");
-  
+function closeLetterAction() {
+  console.log("CLOSING LETTER...");
   window.isReadingLetter = false;
-  lastCloseTime = Date.now();
+  window.lastCloseTime = Date.now();
   
   const letterDiv = document.getElementById("secret-letter");
   if (letterDiv) letterDiv.style.display = "none";
   
-  // Reset trạng thái về Cây thông
   state = "TREE";
-  
   const statusDiv = document.getElementById("status");
-  if(statusDiv) {
+  if (statusDiv) {
     statusDiv.innerText = "🎄 Merry Christmas 🎄"; 
     statusDiv.style.color = "#FFF";
   }
 }
 
+// Bắt sự kiện Click nút đóng (An toàn tuyệt đối)
+document.addEventListener('click', function(event) {
+    if (event.target && event.target.id === 'btn-close-letter') {
+        closeLetterAction();
+    }
+});
+// Bắt sự kiện Touch nút đóng (Cho điện thoại nhạy hơn)
+document.addEventListener('touchstart', function(event) {
+    if (event.target && event.target.id === 'btn-close-letter') {
+        event.preventDefault(); // Ngăn sự kiện xuyên thấu
+        closeLetterAction();
+    }
+}, { passive: false });
+
+
 // ======================================================
-// 4. SETUP THREE.JS
+// 4. LOGIC TƯƠNG TÁC 3D (QUAN TRỌNG: FIX MOBILE)
+// ======================================================
+
+// Hàm kiểm tra Raycast chung cho cả Chuột và Cảm ứng
+function check3DClick(clientX, clientY) {
+    if (window.isReadingLetter) return;
+    if (Date.now() - window.lastCloseTime < 2000) return;
+
+    // Chuẩn hóa toạ độ (-1 đến 1)
+    const mouse = new THREE.Vector2();
+    mouse.x = (clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(clientY / window.innerHeight) * 2 + 1;
+
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(mouse, camera);
+    
+    if (starMesh && state === "TREE") {
+        const intersects = raycaster.intersectObject(starMesh);
+        if (intersects.length > 0) {
+            console.log("HIT STAR!");
+            openLetter();
+        }
+    }
+}
+
+// 1. Sự kiện Click chuột (PC)
+window.addEventListener('click', (event) => {
+    // Nếu click vào nút đóng thư thì bỏ qua
+    if(event.target.id === 'btn-close-letter') return;
+    check3DClick(event.clientX, event.clientY);
+});
+
+// 2. Sự kiện Chạm (Mobile/Tablet) - SỬA LỖI KHÔNG BẤM ĐƯỢC NGÔI SAO
+window.addEventListener('touchstart', (event) => {
+    // Nếu chạm vào nút đóng thư thì bỏ qua
+    if(event.target.id === 'btn-close-letter') return;
+
+    if (event.changedTouches.length > 0) {
+        const touch = event.changedTouches[0];
+        check3DClick(touch.clientX, touch.clientY);
+    }
+}, { passive: false }); // passive: false để đảm bảo bắt dính sự kiện
+
+
+// ======================================================
+// 5. INIT THREE.JS
 // ======================================================
 function init3D() {
   const container = document.getElementById("canvas-container");
@@ -173,36 +220,12 @@ function init3D() {
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  
+  // FIX: Ngăn điện thoại tự zoom/scroll khi chạm vào canvas
+  renderer.domElement.style.touchAction = 'none'; 
+  
   container.appendChild(renderer.domElement);
 
-  // --- SỰ KIỆN CLICK SAO (QUAN TRỌNG: DÙNG WINDOW LISTENER) ---
-  const raycaster = new THREE.Raycaster();
-  const mouse = new THREE.Vector2();
-
-  window.addEventListener('click', (event) => {
-    // 1. Nếu đang đọc thư -> Bỏ qua mọi click vào 3D
-    if (window.isReadingLetter) return;
-    
-    // 2. Nếu mới đóng thư (Cooldown) -> Bỏ qua
-    if (Date.now() - lastCloseTime < 1500) return;
-
-    // 3. Tính tọa độ chuột chuẩn
-    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-
-    raycaster.setFromCamera(mouse, camera);
-    
-    // 4. Kiểm tra trúng ngôi sao không
-    if (starMesh && state === "TREE") {
-      const intersects = raycaster.intersectObject(starMesh);
-      if (intersects.length > 0) {
-        console.log("Click trúng ngôi sao!");
-        openLetter();
-      }
-    }
-  });
-
-  // Tạo các Group hạt
   groupGold = createParticleSystem("gold", CONFIG.goldCount, 5.0);
   groupRed = createParticleSystem("red", CONFIG.redCount, 6.0);
   groupGift = createParticleSystem("gift", CONFIG.giftCount, 5.5);
@@ -210,7 +233,6 @@ function init3D() {
   createPhotos();
   createDecorations();
   
-  // Tạo Tuyết
   snowCount = 800;
   const geo = new THREE.BufferGeometry();
   const positions = new Float32Array(snowCount * 3);
@@ -233,10 +255,7 @@ function init3D() {
 }
 
 function createParticleSystem(type, count, size) {
-  const pPositions = [];
-  const pExplodeTargets = [];
-  const pTreeTargets = [];
-  const phases = []; 
+  const pPositions = []; const pExplodeTargets = []; const pTreeTargets = []; const phases = []; 
   for (let i = 0; i < count; i++) {
     const percent = i / count;
     const h = (1 - percent) * CONFIG.treeHeight;
@@ -247,7 +266,7 @@ function createParticleSystem(type, count, size) {
     const tx = r * Math.cos(angle + (type==='red'?1:0));
     const tz = r * Math.sin(angle + (type==='red'?1:0));
     pTreeTargets.push(tx, y, tz);
-
+    
     const phi = Math.acos(2 * Math.random() - 1);
     const lam = Math.random() * Math.PI * 2;
     const rad = CONFIG.explodeRadius * (0.8 + Math.random() * 0.6);
@@ -349,9 +368,6 @@ function updateParticleGroup(group, targetState, speed, handRotY, time) {
   }
 }
 
-// ======================================================
-// 5. ANIMATION LOOP
-// ======================================================
 function animate() {
   requestAnimationFrame(animate);
   const time = Date.now() * 0.001;
@@ -436,19 +452,6 @@ function startSystem() {
   bgMusic.play().catch((e) => console.log(e));
   init3D();
   
-  // GẮN SỰ KIỆN CLICK CHO NÚT ĐÓNG TẠI ĐÂY (CHỈ 1 LẦN DUY NHẤT)
-  const closeBtn = document.getElementById("btn-close-letter");
-  if (closeBtn) {
-    // Ưu tiên sự kiện click chuẩn
-    closeBtn.onclick = (e) => {
-        // Ngăn sự kiện nổi bọt để không dính vào 3D
-        e.stopPropagation(); 
-        window.closeLetterLogic();
-    };
-  } else {
-    console.error("LỖI: Không tìm thấy nút có id='btn-close-letter' trong HTML!");
-  }
-
   const video = document.getElementsByClassName("input_video")[0];
   const canvas = document.getElementById("camera-preview");
   const ctx = canvas.getContext("2d");
@@ -479,13 +482,15 @@ function startSystem() {
         const activeThreshold = 0.25; 
         const isAtCenter = indexTip.x > 0.3 && indexTip.x < 0.7;
 
-        // --- ĐIỀU KIỆN MỞ THƯ BẰNG TAY ---
         if (!window.isReadingLetter && isPointingGesture && isAtCenter && indexTip.y < activeThreshold) {
-             openLetter();
+            if (Date.now() - window.lastCloseTime > 2000) {
+                openLetter();
+            }
         }
 
-        // --- NẾU KHÔNG ĐỌC THƯ THÌ MỚI CHO LÀM VIỆC KHÁC ---
-        if (!window.isReadingLetter) {
+        if (window.isReadingLetter) {
+             // Do nothing
+        } else {
             handX = lm[9].x; 
             const wrist = lm[0];
             const tips = [8, 12, 16, 20];
@@ -508,7 +513,6 @@ function startSystem() {
             }
         }
     } else {
-        // Mất tay: Nếu không đọc thư thì về mặc định
         if (!window.isReadingLetter) {
             state = "TREE";
             statusDiv.innerText = "🎄 Merry Christmas 🎄"; 
