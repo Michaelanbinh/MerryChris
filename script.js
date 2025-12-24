@@ -5,37 +5,33 @@ const ui = document.getElementById("ui-layer");
 if (ui) ui.classList.add("bottom");
 
 const CONFIG = {
-  goldCount: 200, 
-  redCount: 150,
-  giftCount: 150,
-  explodeRadius: 80,
-  photoOrbitRadius: 35,
-  treeHeight: 65,
-  treeBaseRadius: 40,
+  goldCount: 200, redCount: 150, giftCount: 150,
+  explodeRadius: 80, photoOrbitRadius: 35,
+  treeHeight: 65, treeBaseRadius: 40,
 };
 
-// Biến Three.js
+// Biến hệ thống
 let scene, camera, renderer;
-let groupGold, groupRed, groupGift;
+let groupGold, groupRed, groupGift, snow, snowSpeeds, snowCount;
 let photoMeshes = [];
 let titleMesh, starMesh;
-let snow, snowSpeeds, snowCount;
 
-// Biến trạng thái
+// --- TRẠNG THÁI (State) ---
 let state = "TREE";
 let selectedIndex = 0;
 let handX = 0.5;
 
-// Biến điều khiển đọc thư
-let isReadingLetter = false;
+// --- LOGIC ĐỌC THƯ (QUAN TRỌNG) ---
+// Đưa biến này ra ngoài cùng để không bị lỗi phạm vi (scope)
+window.isReadingLetter = false; 
+let lastCloseTime = 0; 
 
 // Âm thanh
 const MUSIC_URL = "./res/audio.mp3";
 let bgMusic = new Audio(MUSIC_URL);
-bgMusic.loop = true;
-bgMusic.volume = 1.0;
+bgMusic.loop = true; bgMusic.volume = 1.0;
 
-// Texture
+// Texture Loader
 const loader = new THREE.TextureLoader();
 const photoFiles = [
   "./res/1.jpg", "./res/2.jpg", "./res/3.jpg",
@@ -56,26 +52,19 @@ const photoTextures = [];
 photoFiles.forEach((f, i) => (photoTextures[i] = loader.load(f)));
 
 // ======================================================
-// 2. HÀM TẠO TEXTURE (EMOJI, SNOW, MASK)
+// 2. CÁC HÀM XỬ LÝ TEXTURE
 // ======================================================
 function createEmojiTexture(emoji, color) {
   const canvas = document.createElement("canvas");
   canvas.width = 128; canvas.height = 128;
   const ctx = canvas.getContext("2d");
-  
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  
   const grd = ctx.createRadialGradient(64, 64, 10, 64, 64, 60);
   grd.addColorStop(0, "rgba(255,255,255,0.8)");
-  grd.addColorStop(0.4, color); 
-  grd.addColorStop(1, "rgba(0,0,0,0)");
-  ctx.fillStyle = grd;
-  ctx.fillRect(0, 0, 128, 128);
-
-  ctx.font = "80px serif"; 
-  ctx.shadowColor = "#FFF"; ctx.shadowBlur = 10;
+  grd.addColorStop(0.4, color); grd.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = grd; ctx.fillRect(0, 0, 128, 128);
+  ctx.font = "80px serif"; ctx.shadowColor = "#FFF"; ctx.shadowBlur = 10;
   ctx.fillText(emoji, 64, 64);
-  
   return new THREE.CanvasTexture(canvas);
 }
 
@@ -101,7 +90,6 @@ function createSquareSoftEdgeMask(size = 256, fade = 32) {
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext("2d");
   ctx.fillStyle = "white"; ctx.fillRect(0, 0, size, size);
-  
   let g = ctx.createLinearGradient(0, 0, 0, fade);
   g.addColorStop(0, "rgba(255,255,255,0)"); g.addColorStop(1, "rgba(255,255,255,1)");
   ctx.fillStyle = g; ctx.fillRect(0, 0, size, fade);
@@ -125,24 +113,24 @@ function createPhotoMaterial(texture) {
 }
 
 // ======================================================
-// 3. XỬ LÝ SỰ KIỆN CLICK SAO & ĐÓNG MỞ THƯ
+// 3. LOGIC MỞ VÀ ĐÓNG THƯ (GLOBAL)
 // ======================================================
 
-// Hàm mở thư
+// Hàm Mở Thư
 function openLetter() {
-  if (isReadingLetter) return;
-  isReadingLetter = true;
+  if (window.isReadingLetter) return; // Đang đọc rồi thì thôi
+  
+  // Kiểm tra Cooldown: Nếu mới đóng chưa được 1.5 giây thì không mở lại
+  if (Date.now() - lastCloseTime < 1500) return;
+
+  console.log("--> ACTION: Mở thư");
+  window.isReadingLetter = true;
   
   const letterDiv = document.getElementById("secret-letter");
   const statusDiv = document.getElementById("status");
   
   if (letterDiv) {
     letterDiv.style.display = "flex";
-    // Tìm nút đóng và gán sự kiện
-    const closeBtn = document.getElementById("btn-close-letter");
-    if (closeBtn) {
-      closeBtn.onclick = closeLetter;
-    }
   }
   
   if (statusDiv) {
@@ -151,36 +139,28 @@ function openLetter() {
   }
 }
 
-// Hàm đóng thư
-function closeLetter() {
-  isReadingLetter = false;
+// Hàm Đóng Thư (Gắn vào window để gọi từ HTML được dễ dàng)
+window.closeLetterLogic = function() {
+  console.log("--> ACTION: Đóng thư");
+  
+  window.isReadingLetter = false;
+  lastCloseTime = Date.now();
+  
   const letterDiv = document.getElementById("secret-letter");
   if (letterDiv) letterDiv.style.display = "none";
+  
+  // Reset trạng thái về Cây thông
+  state = "TREE";
+  
+  const statusDiv = document.getElementById("status");
+  if(statusDiv) {
+    statusDiv.innerText = "🎄 Merry Christmas 🎄"; 
+    statusDiv.style.color = "#FFF";
+  }
 }
 
-// Xử lý Click vào Ngôi sao (Raycaster)
-const raycaster = new THREE.Raycaster();
-const mouse = new THREE.Vector2();
-
-window.addEventListener('pointerdown', (event) => {
-  // Chỉ xử lý khi đang là Cây thông và chưa đọc thư
-  if (state !== "TREE" || isReadingLetter) return;
-
-  mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-  mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-
-  raycaster.setFromCamera(mouse, camera);
-  
-  if (starMesh) {
-    const intersects = raycaster.intersectObject(starMesh);
-    if (intersects.length > 0) {
-      openLetter();
-    }
-  }
-});
-
 // ======================================================
-// 4. SETUP THREE.JS SCENE
+// 4. SETUP THREE.JS
 // ======================================================
 function init3D() {
   const container = document.getElementById("canvas-container");
@@ -195,6 +175,34 @@ function init3D() {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   container.appendChild(renderer.domElement);
 
+  // --- SỰ KIỆN CLICK SAO (QUAN TRỌNG: DÙNG WINDOW LISTENER) ---
+  const raycaster = new THREE.Raycaster();
+  const mouse = new THREE.Vector2();
+
+  window.addEventListener('click', (event) => {
+    // 1. Nếu đang đọc thư -> Bỏ qua mọi click vào 3D
+    if (window.isReadingLetter) return;
+    
+    // 2. Nếu mới đóng thư (Cooldown) -> Bỏ qua
+    if (Date.now() - lastCloseTime < 1500) return;
+
+    // 3. Tính tọa độ chuột chuẩn
+    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, camera);
+    
+    // 4. Kiểm tra trúng ngôi sao không
+    if (starMesh && state === "TREE") {
+      const intersects = raycaster.intersectObject(starMesh);
+      if (intersects.length > 0) {
+        console.log("Click trúng ngôi sao!");
+        openLetter();
+      }
+    }
+  });
+
+  // Tạo các Group hạt
   groupGold = createParticleSystem("gold", CONFIG.goldCount, 5.0);
   groupRed = createParticleSystem("red", CONFIG.redCount, 6.0);
   groupGift = createParticleSystem("gift", CONFIG.giftCount, 5.5);
@@ -202,7 +210,7 @@ function init3D() {
   createPhotos();
   createDecorations();
   
-  // Snow System
+  // Tạo Tuyết
   snowCount = 800;
   const geo = new THREE.BufferGeometry();
   const positions = new Float32Array(snowCount * 3);
@@ -229,16 +237,13 @@ function createParticleSystem(type, count, size) {
   const pExplodeTargets = [];
   const pTreeTargets = [];
   const phases = []; 
-
   for (let i = 0; i < count; i++) {
     const percent = i / count;
     const h = (1 - percent) * CONFIG.treeHeight;
     const y = h - CONFIG.treeHeight / 2;
-
     const angle = percent * Math.PI * 15; 
     const rMax = (1 - h / CONFIG.treeHeight) * CONFIG.treeBaseRadius;
     const r = rMax * (0.8 + Math.random() * 0.4);
-
     const tx = r * Math.cos(angle + (type==='red'?1:0));
     const tz = r * Math.sin(angle + (type==='red'?1:0));
     pTreeTargets.push(tx, y, tz);
@@ -254,17 +259,14 @@ function createParticleSystem(type, count, size) {
     pPositions.push(tx, y, tz);
     phases.push(Math.random() * Math.PI * 2);
   }
-
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.Float32BufferAttribute(pPositions, 3));
   geo.setAttribute("phase", new THREE.Float32BufferAttribute(phases, 1));
   geo.userData = { tree: pTreeTargets, explode: pExplodeTargets };
-
   const mat = new THREE.PointsMaterial({
     size: size, map: textures[type], transparent: true, opacity: 1.0,
     blending: THREE.NormalBlending, depthWrite: false, sizeAttenuation: true,
   });
-
   const points = new THREE.Points(geo, mat);
   scene.add(points);
   return points;
@@ -299,24 +301,19 @@ function createPhotos() {
 }
 
 function createDecorations() {
-  // --- CHỮ MERRY CHRISTMAS ---
   const canvas = document.createElement("canvas");
   canvas.width = 1024; canvas.height = 256;
   const ctx = canvas.getContext("2d");
-  
   ctx.font = 'bold italic 100px "Times New Roman"';
   ctx.fillStyle = "#FFD700"; ctx.textAlign = "center";
   ctx.shadowColor = "#FF0000"; ctx.shadowBlur = 40;
-  // Sửa chữ hiển thị
   ctx.fillText("MERRY CHRISTMAS", 512, 130);
-  
   const tex = new THREE.CanvasTexture(canvas);
   const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, blending: THREE.AdditiveBlending });
   titleMesh = new THREE.Mesh(new THREE.PlaneGeometry(70, 18), mat);
   titleMesh.position.set(0, 55, 0);
   scene.add(titleMesh);
 
-  // --- NGÔI SAO ---
   const starCanvas = document.createElement("canvas");
   starCanvas.width = 128; starCanvas.height = 128;
   const sCtx = starCanvas.getContext("2d");
@@ -339,12 +336,10 @@ function updateParticleGroup(group, targetState, speed, handRotY, time) {
   const positions = group.geometry.attributes.position.array;
   const targetKey = targetState === "TREE" ? "tree" : "explode";
   const targets = group.geometry.userData[targetState === "PHOTO" ? "explode" : targetKey];
-
   for (let i = 0; i < positions.length; i++) {
     positions[i] += (targets[i] - positions[i]) * speed;
   }
   group.geometry.attributes.position.needsUpdate = true;
-
   if (targetState === "TREE") {
     group.rotation.y += 0.005; 
     const scale = 1 + Math.sin(time * 3) * 0.15; 
@@ -359,7 +354,6 @@ function updateParticleGroup(group, targetState, speed, handRotY, time) {
 // ======================================================
 function animate() {
   requestAnimationFrame(animate);
-
   const time = Date.now() * 0.001;
   const speed = 0.06;
   const delta = handX - 0.5;
@@ -383,38 +377,29 @@ function animate() {
   });
 
   if (state === "TREE") {
-    titleMesh.visible = true; starMesh.visible = true;
-    titleMesh.scale.lerp(new THREE.Vector3(1, 1, 1), 0.1);
-    starMesh.rotation.z = Math.sin(time*2) * 0.1;
-    photoMeshes.forEach((m) => {
-      m.scale.lerp(new THREE.Vector3(0, 0, 0), 0.1); m.visible = false;
-    });
+    if(titleMesh) { titleMesh.visible = true; titleMesh.scale.lerp(new THREE.Vector3(1, 1, 1), 0.1); }
+    if(starMesh) { starMesh.visible = true; starMesh.rotation.z = Math.sin(time*2) * 0.1; }
+    photoMeshes.forEach((m) => { m.scale.lerp(new THREE.Vector3(0, 0, 0), 0.1); m.visible = false; });
   } else if (state === "EXPLODE") {
-    titleMesh.visible = false; starMesh.visible = false;
-
+    if(titleMesh) titleMesh.visible = false; 
+    if(starMesh) starMesh.visible = false;
     const totalPhotos = photoMeshes.length;
     const angleStep = (Math.PI * 2) / totalPhotos;
     const baseAngle = groupGold.rotation.y; 
-    
     let bestIdx = 0; let maxZ = -999;
-
     photoMeshes.forEach((mesh, i) => {
       mesh.visible = true;
       const angle = baseAngle + i * angleStep;
-      
       const x = Math.sin(angle) * CONFIG.photoOrbitRadius;
       const z = Math.cos(angle) * CONFIG.photoOrbitRadius;
       const y = Math.sin(time * 2 + i) * 2; 
-
       mesh.position.lerp(new THREE.Vector3(x, y, z), 0.1);
       mesh.lookAt(camera.position);
-
       if (z > maxZ) { maxZ = z; bestIdx = i; }
       const scale = z > 5 ? 1.0 + (z/CONFIG.photoOrbitRadius)*0.5 : 0.7;
       mesh.scale.lerp(new THREE.Vector3(scale, scale, scale), 0.1);
     });
     selectedIndex = bestIdx;
-    
   } else if (state === "PHOTO") {
     photoMeshes.forEach((mesh, i) => {
       if (i === selectedIndex) {
@@ -428,7 +413,7 @@ function animate() {
     });
   }
 
-  // Snow Loop
+  // Snow
   const pos = snow.geometry.attributes.position.array;
   for (let i = 0; i < snowCount; i++) {
     pos[i * 3 + 1] -= snowSpeeds[i];
@@ -444,12 +429,25 @@ function animate() {
 }
 
 // ======================================================
-// 6. MAIN SYSTEM START & HAND TRACKING
+// 6. START SYSTEM & HAND TRACKING
 // ======================================================
 function startSystem() {
   document.getElementById("btnStart").style.display = "none";
   bgMusic.play().catch((e) => console.log(e));
   init3D();
+  
+  // GẮN SỰ KIỆN CLICK CHO NÚT ĐÓNG TẠI ĐÂY (CHỈ 1 LẦN DUY NHẤT)
+  const closeBtn = document.getElementById("btn-close-letter");
+  if (closeBtn) {
+    // Ưu tiên sự kiện click chuẩn
+    closeBtn.onclick = (e) => {
+        // Ngăn sự kiện nổi bọt để không dính vào 3D
+        e.stopPropagation(); 
+        window.closeLetterLogic();
+    };
+  } else {
+    console.error("LỖI: Không tìm thấy nút có id='btn-close-letter' trong HTML!");
+  }
 
   const video = document.getElementsByClassName("input_video")[0];
   const canvas = document.getElementById("camera-preview");
@@ -458,46 +456,37 @@ function startSystem() {
 
   let frameCnt = 0;
   const hands = new Hands({
-    locateFile: (file) =>
-      `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
+    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
   });
   hands.setOptions({
-    maxNumHands: 1,
-    modelComplexity: 0,
-    minDetectionConfidence: 0.5,
-    minTrackingConfidence: 0.5,
+    maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5,
   });
 
   hands.onResults((results) => {
-    // Vẽ camera nhỏ
     ctx.clearRect(0, 0, 100, 75);
     ctx.drawImage(results.image, 0, 0, 100, 75);
 
     if (results.multiHandLandmarks.length > 0) {
         const lm = results.multiHandLandmarks[0];
 
-        // --- PHÂN TÍCH NGÓN TAY ---
         const isIndexOpen = lm[8].y < lm[6].y;
         const isMiddleClosed = lm[12].y > lm[10].y;
         const isRingClosed   = lm[16].y > lm[14].y;
         const isPinkyClosed  = lm[20].y > lm[18].y;
-
         const isPointingGesture = isIndexOpen && isMiddleClosed && isRingClosed && isPinkyClosed;
+        
         const indexTip = lm[8];
         const activeThreshold = 0.25; 
         const isAtCenter = indexTip.x > 0.3 && indexTip.x < 0.7;
 
-        // --- LOGIC MỚI: CHỈ TAY LÊN -> MỞ THƯ (GIỮ NGUYÊN) ---
-        if (!isReadingLetter && isPointingGesture && isAtCenter && indexTip.y < activeThreshold) {
+        // --- ĐIỀU KIỆN MỞ THƯ BẰNG TAY ---
+        if (!window.isReadingLetter && isPointingGesture && isAtCenter && indexTip.y < activeThreshold) {
              openLetter();
         }
 
-        // --- ĐIỀU KHIỂN ---
-        if (isReadingLetter) {
-             // Đang đọc thư: Không xoay cây, không làm gì cả
-        } else {
+        // --- NẾU KHÔNG ĐỌC THƯ THÌ MỚI CHO LÀM VIỆC KHÁC ---
+        if (!window.isReadingLetter) {
             handX = lm[9].x; 
-
             const wrist = lm[0];
             const tips = [8, 12, 16, 20];
             let openDist = 0;
@@ -519,8 +508,8 @@ function startSystem() {
             }
         }
     } else {
-        // Mất tay: Nếu chưa đọc thư thì hiện status mặc định
-        if (!isReadingLetter) {
+        // Mất tay: Nếu không đọc thư thì về mặc định
+        if (!window.isReadingLetter) {
             state = "TREE";
             statusDiv.innerText = "🎄 Merry Christmas 🎄"; 
             statusDiv.style.color = "#FFF";
@@ -529,18 +518,12 @@ function startSystem() {
   });
 
   const cameraUtils = new Camera(video, {
-    onFrame: async () => {
-      frameCnt++;
-      if (frameCnt % 3 !== 0) return;
-      await hands.send({ image: video });
-    },
-    width: 320,
-    height: 240,
+    onFrame: async () => { frameCnt++; if (frameCnt % 3 !== 0) return; await hands.send({ image: video }); },
+    width: 320, height: 240,
   });
   cameraUtils.start();
 }
 
-// Xử lý Resize
 window.addEventListener("resize", () => {
   if (camera) {
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -548,7 +531,6 @@ window.addEventListener("resize", () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
   }
 });
-
 function logError(e) {
   const el = document.getElementById("error-log");
   if(el) { el.style.display = "block"; el.innerText += e + "\n"; }
