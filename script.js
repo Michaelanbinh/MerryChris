@@ -1,33 +1,39 @@
 // ======================================================
-// 1. CẤU HÌNH & BIẾN HỆ THỐNG
+// 1. CẤU HÌNH & BIẾN TOÀN CỤC
 // ======================================================
 const ui = document.getElementById("ui-layer");
 if (ui) ui.classList.add("bottom");
 
 const CONFIG = {
-  goldCount: 200, redCount: 150, giftCount: 150,
-  explodeRadius: 80, photoOrbitRadius: 35,
-  treeHeight: 65, treeBaseRadius: 40,
+  goldCount: 200, 
+  redCount: 150,
+  giftCount: 150,
+  explodeRadius: 80,
+  photoOrbitRadius: 35,
+  treeHeight: 65,
+  treeBaseRadius: 40,
 };
 
+// Biến Three.js
 let scene, camera, renderer;
-let groupGold, groupRed, groupGift, snow, snowSpeeds, snowCount;
+let groupGold, groupRed, groupGift;
 let photoMeshes = [];
 let titleMesh, starMesh;
+let snow, snowSpeeds, snowCount;
 
-// Trạng thái logic
+// Biến trạng thái
 let state = "TREE";
 let selectedIndex = 0;
 let handX = 0.5;
 
-// Biến kiểm soát đọc thư (Global)
-window.isReadingLetter = false;
-window.lastCloseTime = 0; 
+// Biến điều khiển đọc thư
+let isReadingLetter = false;
 
 // Âm thanh
 const MUSIC_URL = "./res/audio.mp3";
 let bgMusic = new Audio(MUSIC_URL);
-bgMusic.loop = true; bgMusic.volume = 1.0;
+bgMusic.loop = true;
+bgMusic.volume = 1.0;
 
 // Texture
 const loader = new THREE.TextureLoader();
@@ -50,19 +56,26 @@ const photoTextures = [];
 photoFiles.forEach((f, i) => (photoTextures[i] = loader.load(f)));
 
 // ======================================================
-// 2. TEXTURE & MATERIAL
+// 2. HÀM TẠO TEXTURE (EMOJI, SNOW, MASK)
 // ======================================================
 function createEmojiTexture(emoji, color) {
   const canvas = document.createElement("canvas");
   canvas.width = 128; canvas.height = 128;
   const ctx = canvas.getContext("2d");
+  
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  
   const grd = ctx.createRadialGradient(64, 64, 10, 64, 64, 60);
   grd.addColorStop(0, "rgba(255,255,255,0.8)");
-  grd.addColorStop(0.4, color); grd.addColorStop(1, "rgba(0,0,0,0)");
-  ctx.fillStyle = grd; ctx.fillRect(0, 0, 128, 128);
-  ctx.font = "80px serif"; ctx.shadowColor = "#FFF"; ctx.shadowBlur = 10;
+  grd.addColorStop(0.4, color); 
+  grd.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, 0, 128, 128);
+
+  ctx.font = "80px serif"; 
+  ctx.shadowColor = "#FFF"; ctx.shadowBlur = 10;
   ctx.fillText(emoji, 64, 64);
+  
   return new THREE.CanvasTexture(canvas);
 }
 
@@ -88,6 +101,7 @@ function createSquareSoftEdgeMask(size = 256, fade = 32) {
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext("2d");
   ctx.fillStyle = "white"; ctx.fillRect(0, 0, size, size);
+  
   let g = ctx.createLinearGradient(0, 0, 0, fade);
   g.addColorStop(0, "rgba(255,255,255,0)"); g.addColorStop(1, "rgba(255,255,255,1)");
   ctx.fillStyle = g; ctx.fillRect(0, 0, size, fade);
@@ -111,103 +125,62 @@ function createPhotoMaterial(texture) {
 }
 
 // ======================================================
-// 3. LOGIC ĐÓNG / MỞ THƯ
+// 3. XỬ LÝ SỰ KIỆN CLICK SAO & ĐÓNG MỞ THƯ
 // ======================================================
-function openLetter() {
-  if (window.isReadingLetter) return;
-  if (Date.now() - window.lastCloseTime < 2000) return;
 
-  console.log("OPENING LETTER...");
-  window.isReadingLetter = true;
+// Hàm mở thư
+function openLetter() {
+  if (isReadingLetter) return;
+  isReadingLetter = true;
   
   const letterDiv = document.getElementById("secret-letter");
-  if (letterDiv) letterDiv.style.display = "flex";
-  
   const statusDiv = document.getElementById("status");
+  
+  if (letterDiv) {
+    letterDiv.style.display = "flex";
+    // Tìm nút đóng và gán sự kiện
+    const closeBtn = document.getElementById("btn-close-letter");
+    if (closeBtn) {
+      closeBtn.onclick = closeLetter;
+    }
+  }
+  
   if (statusDiv) {
     statusDiv.innerText = "⭐ ĐANG ĐỌC THƯ ⭐";
     statusDiv.style.color = "#FF00FF";
   }
 }
 
-function closeLetterAction() {
-  console.log("CLOSING LETTER...");
-  window.isReadingLetter = false;
-  window.lastCloseTime = Date.now();
-  
+// Hàm đóng thư
+function closeLetter() {
+  isReadingLetter = false;
   const letterDiv = document.getElementById("secret-letter");
   if (letterDiv) letterDiv.style.display = "none";
+}
+
+// Xử lý Click vào Ngôi sao (Raycaster)
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+window.addEventListener('pointerdown', (event) => {
+  // Chỉ xử lý khi đang là Cây thông và chưa đọc thư
+  if (state !== "TREE" || isReadingLetter) return;
+
+  mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+  raycaster.setFromCamera(mouse, camera);
   
-  state = "TREE";
-  const statusDiv = document.getElementById("status");
-  if (statusDiv) {
-    statusDiv.innerText = "🎄 Merry Christmas 🎄"; 
-    statusDiv.style.color = "#FFF";
+  if (starMesh) {
+    const intersects = raycaster.intersectObject(starMesh);
+    if (intersects.length > 0) {
+      openLetter();
+    }
   }
-}
-
-// Bắt sự kiện Click nút đóng (An toàn tuyệt đối)
-document.addEventListener('click', function(event) {
-    if (event.target && event.target.id === 'btn-close-letter') {
-        closeLetterAction();
-    }
-});
-// Bắt sự kiện Touch nút đóng (Cho điện thoại nhạy hơn)
-document.addEventListener('touchstart', function(event) {
-    if (event.target && event.target.id === 'btn-close-letter') {
-        event.preventDefault(); // Ngăn sự kiện xuyên thấu
-        closeLetterAction();
-    }
-}, { passive: false });
-
-
-// ======================================================
-// 4. LOGIC TƯƠNG TÁC 3D (QUAN TRỌNG: FIX MOBILE)
-// ======================================================
-
-// Hàm kiểm tra Raycast chung cho cả Chuột và Cảm ứng
-function check3DClick(clientX, clientY) {
-    if (window.isReadingLetter) return;
-    if (Date.now() - window.lastCloseTime < 2000) return;
-
-    // Chuẩn hóa toạ độ (-1 đến 1)
-    const mouse = new THREE.Vector2();
-    mouse.x = (clientX / window.innerWidth) * 2 - 1;
-    mouse.y = -(clientY / window.innerHeight) * 2 + 1;
-
-    const raycaster = new THREE.Raycaster();
-    raycaster.setFromCamera(mouse, camera);
-    
-    if (starMesh && state === "TREE") {
-        const intersects = raycaster.intersectObject(starMesh);
-        if (intersects.length > 0) {
-            console.log("HIT STAR!");
-            openLetter();
-        }
-    }
-}
-
-// 1. Sự kiện Click chuột (PC)
-window.addEventListener('click', (event) => {
-    // Nếu click vào nút đóng thư thì bỏ qua
-    if(event.target.id === 'btn-close-letter') return;
-    check3DClick(event.clientX, event.clientY);
 });
 
-// 2. Sự kiện Chạm (Mobile/Tablet) - SỬA LỖI KHÔNG BẤM ĐƯỢC NGÔI SAO
-window.addEventListener('touchstart', (event) => {
-    // Nếu chạm vào nút đóng thư thì bỏ qua
-    if(event.target.id === 'btn-close-letter') return;
-
-    if (event.changedTouches.length > 0) {
-        const touch = event.changedTouches[0];
-        check3DClick(touch.clientX, touch.clientY);
-    }
-}, { passive: false }); // passive: false để đảm bảo bắt dính sự kiện
-
-
 // ======================================================
-// 5. INIT THREE.JS
+// 4. SETUP THREE.JS SCENE
 // ======================================================
 function init3D() {
   const container = document.getElementById("canvas-container");
@@ -220,10 +193,6 @@ function init3D() {
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  
-  // FIX: Ngăn điện thoại tự zoom/scroll khi chạm vào canvas
-  renderer.domElement.style.touchAction = 'none'; 
-  
   container.appendChild(renderer.domElement);
 
   groupGold = createParticleSystem("gold", CONFIG.goldCount, 5.0);
@@ -233,6 +202,7 @@ function init3D() {
   createPhotos();
   createDecorations();
   
+  // Snow System
   snowCount = 800;
   const geo = new THREE.BufferGeometry();
   const positions = new Float32Array(snowCount * 3);
@@ -255,18 +225,24 @@ function init3D() {
 }
 
 function createParticleSystem(type, count, size) {
-  const pPositions = []; const pExplodeTargets = []; const pTreeTargets = []; const phases = []; 
+  const pPositions = [];
+  const pExplodeTargets = [];
+  const pTreeTargets = [];
+  const phases = []; 
+
   for (let i = 0; i < count; i++) {
     const percent = i / count;
     const h = (1 - percent) * CONFIG.treeHeight;
     const y = h - CONFIG.treeHeight / 2;
+
     const angle = percent * Math.PI * 15; 
     const rMax = (1 - h / CONFIG.treeHeight) * CONFIG.treeBaseRadius;
     const r = rMax * (0.8 + Math.random() * 0.4);
+
     const tx = r * Math.cos(angle + (type==='red'?1:0));
     const tz = r * Math.sin(angle + (type==='red'?1:0));
     pTreeTargets.push(tx, y, tz);
-    
+
     const phi = Math.acos(2 * Math.random() - 1);
     const lam = Math.random() * Math.PI * 2;
     const rad = CONFIG.explodeRadius * (0.8 + Math.random() * 0.6);
@@ -278,14 +254,17 @@ function createParticleSystem(type, count, size) {
     pPositions.push(tx, y, tz);
     phases.push(Math.random() * Math.PI * 2);
   }
+
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.Float32BufferAttribute(pPositions, 3));
   geo.setAttribute("phase", new THREE.Float32BufferAttribute(phases, 1));
   geo.userData = { tree: pTreeTargets, explode: pExplodeTargets };
+
   const mat = new THREE.PointsMaterial({
     size: size, map: textures[type], transparent: true, opacity: 1.0,
     blending: THREE.NormalBlending, depthWrite: false, sizeAttenuation: true,
   });
+
   const points = new THREE.Points(geo, mat);
   scene.add(points);
   return points;
@@ -320,19 +299,24 @@ function createPhotos() {
 }
 
 function createDecorations() {
+  // --- CHỮ MERRY CHRISTMAS ---
   const canvas = document.createElement("canvas");
   canvas.width = 1024; canvas.height = 256;
   const ctx = canvas.getContext("2d");
+  
   ctx.font = 'bold italic 100px "Times New Roman"';
   ctx.fillStyle = "#FFD700"; ctx.textAlign = "center";
   ctx.shadowColor = "#FF0000"; ctx.shadowBlur = 40;
+  // Sửa chữ hiển thị
   ctx.fillText("MERRY CHRISTMAS", 512, 130);
+  
   const tex = new THREE.CanvasTexture(canvas);
   const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, blending: THREE.AdditiveBlending });
   titleMesh = new THREE.Mesh(new THREE.PlaneGeometry(70, 18), mat);
   titleMesh.position.set(0, 55, 0);
   scene.add(titleMesh);
 
+  // --- NGÔI SAO ---
   const starCanvas = document.createElement("canvas");
   starCanvas.width = 128; starCanvas.height = 128;
   const sCtx = starCanvas.getContext("2d");
@@ -355,10 +339,12 @@ function updateParticleGroup(group, targetState, speed, handRotY, time) {
   const positions = group.geometry.attributes.position.array;
   const targetKey = targetState === "TREE" ? "tree" : "explode";
   const targets = group.geometry.userData[targetState === "PHOTO" ? "explode" : targetKey];
+
   for (let i = 0; i < positions.length; i++) {
     positions[i] += (targets[i] - positions[i]) * speed;
   }
   group.geometry.attributes.position.needsUpdate = true;
+
   if (targetState === "TREE") {
     group.rotation.y += 0.005; 
     const scale = 1 + Math.sin(time * 3) * 0.15; 
@@ -368,8 +354,12 @@ function updateParticleGroup(group, targetState, speed, handRotY, time) {
   }
 }
 
+// ======================================================
+// 5. ANIMATION LOOP
+// ======================================================
 function animate() {
   requestAnimationFrame(animate);
+
   const time = Date.now() * 0.001;
   const speed = 0.06;
   const delta = handX - 0.5;
@@ -393,29 +383,38 @@ function animate() {
   });
 
   if (state === "TREE") {
-    if(titleMesh) { titleMesh.visible = true; titleMesh.scale.lerp(new THREE.Vector3(1, 1, 1), 0.1); }
-    if(starMesh) { starMesh.visible = true; starMesh.rotation.z = Math.sin(time*2) * 0.1; }
-    photoMeshes.forEach((m) => { m.scale.lerp(new THREE.Vector3(0, 0, 0), 0.1); m.visible = false; });
+    titleMesh.visible = true; starMesh.visible = true;
+    titleMesh.scale.lerp(new THREE.Vector3(1, 1, 1), 0.1);
+    starMesh.rotation.z = Math.sin(time*2) * 0.1;
+    photoMeshes.forEach((m) => {
+      m.scale.lerp(new THREE.Vector3(0, 0, 0), 0.1); m.visible = false;
+    });
   } else if (state === "EXPLODE") {
-    if(titleMesh) titleMesh.visible = false; 
-    if(starMesh) starMesh.visible = false;
+    titleMesh.visible = false; starMesh.visible = false;
+
     const totalPhotos = photoMeshes.length;
     const angleStep = (Math.PI * 2) / totalPhotos;
     const baseAngle = groupGold.rotation.y; 
+    
     let bestIdx = 0; let maxZ = -999;
+
     photoMeshes.forEach((mesh, i) => {
       mesh.visible = true;
       const angle = baseAngle + i * angleStep;
+      
       const x = Math.sin(angle) * CONFIG.photoOrbitRadius;
       const z = Math.cos(angle) * CONFIG.photoOrbitRadius;
       const y = Math.sin(time * 2 + i) * 2; 
+
       mesh.position.lerp(new THREE.Vector3(x, y, z), 0.1);
       mesh.lookAt(camera.position);
+
       if (z > maxZ) { maxZ = z; bestIdx = i; }
       const scale = z > 5 ? 1.0 + (z/CONFIG.photoOrbitRadius)*0.5 : 0.7;
       mesh.scale.lerp(new THREE.Vector3(scale, scale, scale), 0.1);
     });
     selectedIndex = bestIdx;
+    
   } else if (state === "PHOTO") {
     photoMeshes.forEach((mesh, i) => {
       if (i === selectedIndex) {
@@ -429,7 +428,7 @@ function animate() {
     });
   }
 
-  // Snow
+  // Snow Loop
   const pos = snow.geometry.attributes.position.array;
   for (let i = 0; i < snowCount; i++) {
     pos[i * 3 + 1] -= snowSpeeds[i];
@@ -445,13 +444,13 @@ function animate() {
 }
 
 // ======================================================
-// 6. START SYSTEM & HAND TRACKING
+// 6. MAIN SYSTEM START & HAND TRACKING
 // ======================================================
 function startSystem() {
   document.getElementById("btnStart").style.display = "none";
   bgMusic.play().catch((e) => console.log(e));
   init3D();
-  
+
   const video = document.getElementsByClassName("input_video")[0];
   const canvas = document.getElementById("camera-preview");
   const ctx = canvas.getContext("2d");
@@ -459,39 +458,46 @@ function startSystem() {
 
   let frameCnt = 0;
   const hands = new Hands({
-    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
+    locateFile: (file) =>
+      `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
   });
   hands.setOptions({
-    maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5,
+    maxNumHands: 1,
+    modelComplexity: 0,
+    minDetectionConfidence: 0.5,
+    minTrackingConfidence: 0.5,
   });
 
   hands.onResults((results) => {
+    // Vẽ camera nhỏ
     ctx.clearRect(0, 0, 100, 75);
     ctx.drawImage(results.image, 0, 0, 100, 75);
 
     if (results.multiHandLandmarks.length > 0) {
         const lm = results.multiHandLandmarks[0];
 
+        // --- PHÂN TÍCH NGÓN TAY ---
         const isIndexOpen = lm[8].y < lm[6].y;
         const isMiddleClosed = lm[12].y > lm[10].y;
         const isRingClosed   = lm[16].y > lm[14].y;
         const isPinkyClosed  = lm[20].y > lm[18].y;
+
         const isPointingGesture = isIndexOpen && isMiddleClosed && isRingClosed && isPinkyClosed;
-        
         const indexTip = lm[8];
         const activeThreshold = 0.25; 
         const isAtCenter = indexTip.x > 0.3 && indexTip.x < 0.7;
 
-        if (!window.isReadingLetter && isPointingGesture && isAtCenter && indexTip.y < activeThreshold) {
-            if (Date.now() - window.lastCloseTime > 2000) {
-                openLetter();
-            }
+        // --- LOGIC MỚI: CHỈ TAY LÊN -> MỞ THƯ (GIỮ NGUYÊN) ---
+        if (!isReadingLetter && isPointingGesture && isAtCenter && indexTip.y < activeThreshold) {
+             openLetter();
         }
 
-        if (window.isReadingLetter) {
-             // Do nothing
+        // --- ĐIỀU KHIỂN ---
+        if (isReadingLetter) {
+             // Đang đọc thư: Không xoay cây, không làm gì cả
         } else {
             handX = lm[9].x; 
+
             const wrist = lm[0];
             const tips = [8, 12, 16, 20];
             let openDist = 0;
@@ -513,7 +519,8 @@ function startSystem() {
             }
         }
     } else {
-        if (!window.isReadingLetter) {
+        // Mất tay: Nếu chưa đọc thư thì hiện status mặc định
+        if (!isReadingLetter) {
             state = "TREE";
             statusDiv.innerText = "🎄 Merry Christmas 🎄"; 
             statusDiv.style.color = "#FFF";
@@ -522,12 +529,18 @@ function startSystem() {
   });
 
   const cameraUtils = new Camera(video, {
-    onFrame: async () => { frameCnt++; if (frameCnt % 3 !== 0) return; await hands.send({ image: video }); },
-    width: 320, height: 240,
+    onFrame: async () => {
+      frameCnt++;
+      if (frameCnt % 3 !== 0) return;
+      await hands.send({ image: video });
+    },
+    width: 320,
+    height: 240,
   });
   cameraUtils.start();
 }
 
+// Xử lý Resize
 window.addEventListener("resize", () => {
   if (camera) {
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -535,6 +548,7 @@ window.addEventListener("resize", () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
   }
 });
+
 function logError(e) {
   const el = document.getElementById("error-log");
   if(el) { el.style.display = "block"; el.innerText += e + "\n"; }
